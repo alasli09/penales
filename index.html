@@ -136,7 +136,7 @@
     FK={horizon:H*0.30,goalTop:H*0.32,goalLine:H*0.575,goalLeft:W*0.5-W*0.36,goalRight:W*0.5+W*0.36,cx:W*0.5,spotX:W*0.5,spotY:H*0.87};
     FK.goalHalf=(FK.goalRight-FK.goalLeft)/2; FK.ballR=Math.max(14,W*0.05);
     FS={goalTop:H*0.46,goalLine:H*0.72,goalLeft:W*0.08,goalRight:W*0.92,cx:W*0.5,spotX:W*0.5,spotY:H*0.30,readyX:W*0.5};
-    FS.readyY=lerp(FS.goalTop,FS.goalLine,0.5); FS.goalHalf=(FS.goalRight-FS.goalLeft)/2; FS.reach=Math.max(50,W*0.135);
+    FS.readyY=lerp(FS.goalTop,FS.goalLine,0.5); FS.goalHalf=(FS.goalRight-FS.goalLeft)/2; FS.reach=Math.max(56,W*0.15);
   }
   window.addEventListener('resize',resize,{passive:true}); new ResizeObserver(resize).observe(stage); resize();
 
@@ -236,7 +236,7 @@
     shotData=shot;
     const ty=lerp(FS.goalTop,FS.goalLine,clamp(shot.ny,-0.2,1.2));
     const tx=FS.cx+shot.nx*FS.goalHalf;
-    sshot={t:0,dur:0.5-shot.power*0.06,tx,ty,nx:shot.nx,ny:shot.ny,result:shot.result,resolved:false,catchX:null,catchY:null};
+    sshot={t:0,dur:0.62-shot.power*0.06,tx,ty,nx:shot.nx,ny:shot.ny,result:shot.result,resolved:false,catchX:null,catchY:null};
     sglovesReset(); hideSpin(); setHint('<b>¡Ya viene!</b> Deslízate para taparla.');
     phase=PH.INCOMING; clock=0; sfx.kick();
   }
@@ -481,7 +481,7 @@
     ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(bx,by,r,0,7);ctx.fill();ctx.fillStyle='#0e1a12';ctx.beginPath();ctx.arc(bx-r*0.15,by-r*0.15,r*0.26,0,7);ctx.fill();ctx.beginPath();ctx.arc(bx+r*0.4,by+r*0.3,r*0.13,0,7);ctx.fill();
   }
   function drawKeeperS(){
-    if(sgloves.diving){ sgloves.t=Math.min(1,sgloves.t+(1/60)/sgloves.dur); const e=1-Math.pow(1-sgloves.t,2); sgloves.x=lerp(sgloves.sx,sgloves.tx,e);sgloves.y=lerp(sgloves.sy,sgloves.ty,e); }
+    if(sgloves.diving && phase===PH.INCOMING){ sgloves.t=Math.min(1,sgloves.t+(1/60)/sgloves.dur); const e=1-Math.pow(1-sgloves.t,2); sgloves.x=lerp(sgloves.sx,sgloves.tx,e);sgloves.y=lerp(sgloves.sy,sgloves.ty,e); } // se congela al resolver (lo que ves = lo que cuenta)
     let hx=sgloves.x, hy=sgloves.y;
     if(!sgloves.diving && sdrag){ const dx=sdrag.cx-sdrag.sx,dy=sdrag.cy-sdrag.sy; const ax=clamp(FS.readyX+dx*DIVE_SCALE,FS.goalLeft,FS.goalRight),ay=clamp(FS.readyY+dy*DIVE_SCALE,FS.goalTop,FS.goalLine); hx=lerp(FS.readyX,ax,0.35);hy=lerp(FS.readyY,ay,0.22); }
     if(phase===PH.INCOMING){ ctx.strokeStyle='rgba(84,199,255,'+(sgloves.diving?0.32:0.16)+')';ctx.lineWidth=2;ctx.setLineDash([4,7]);ctx.beginPath();ctx.arc(hx,hy,FS.reach,0,7);ctx.stroke();ctx.setLineDash([]); }
@@ -519,7 +519,7 @@
 
     ctx.clearRect(0,0,W,H); ctx.save();
     if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=0.85; if(shake<0.4)shake=0; }
-    if(view==='kick'){ drawFieldK(); drawGoalK(); if(phase===PH.RESULT)drawKeeperK(); drawBallK(); drawAimK(); }
+    if(view==='kick'){ drawFieldK(); drawGoalK(); drawKeeperK(); drawBallK(); drawAimK(); }
     else { drawFieldS(); drawShooterS(); drawGoalFrameS(); drawBallS(); drawKeeperS(); drawDiveAimS(); }
     drawParticles();
     if(flash>0){ ctx.fillStyle=(view==='kick'?'rgba(180,242,94,':'rgba(84,199,255,')+(flash*0.16)+')'; ctx.fillRect(-20,-20,W+40,H+40); flash-=0.05; }
@@ -530,3 +530,4 @@
 </script>
 </body>
 </html>
+
