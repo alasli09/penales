@@ -156,6 +156,26 @@
     return {side:sd,dv,bodyLen,footX,footY,pelvisX,pelvisY,shX,shY,hx,hy};
   }
   function closestOnSeg(px,py,ax,ay,bx,by){ const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1; let t=((px-ax)*dx+(py-ay)*dy)/l2; t=clamp(t,0,1); return {x:ax+dx*t,y:ay+dy*t}; }
+  // formas de colisión del arquero (mismas partes que se dibujan): cápsulas (brazos/piernas/torso) y círculos (cabeza/manos)
+  function keeperShapesS(hx,hy,lunge,side){
+    const P=keeperPose(hx,hy,lunge,side),{footX,footY,pelvisX,pelvisY,shX,shY,side:sd,dv,bodyLen}=P;
+    const foot2X=footX+sd*bodyLen*(0.16+dv*0.14),foot2Y=footY-Math.max(6,W*0.022), spread=Math.max(14,W*0.045);
+    const legR=Math.max(10,W*0.03)/2, torsoR=Math.max(17,W*0.052)/2, armR=Math.max(10,W*0.03)/2, headR=Math.max(11,W*0.028), gloveR=Math.max(12,W*0.032);
+    return [
+      {cap:[pelvisX,pelvisY,footX,footY],r:legR},{cap:[pelvisX,pelvisY,foot2X,foot2Y],r:legR},
+      {cap:[pelvisX,pelvisY,shX,shY],r:torsoR},
+      {cap:[shX,shY,hx-spread,hy],r:armR},{cap:[shX,shY,hx+spread,hy],r:armR},
+      {circ:[lerp(shX,hx,0.5),lerp(shY,hy,0.5)-4],r:headR},
+      {circ:[hx-spread,hy],r:gloveR},{circ:[hx+spread,hy],r:gloveR},
+    ];
+  }
+  function ballHitsShapes(bx,by,br,shapes){
+    for(const s of shapes){ let cx,cy;
+      if(s.circ){ cx=s.circ[0];cy=s.circ[1]; } else { const c=closestOnSeg(bx,by,s.cap[0],s.cap[1],s.cap[2],s.cap[3]); cx=c.x;cy=c.y; }
+      if(Math.hypot(bx-cx,by-cy) < br + s.r) return {cx,cy};
+    }
+    return null;
+  }
   function limb(ax,ay,bx,by,bend,w,col){ const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len; ctx.strokeStyle=col;ctx.lineWidth=w;ctx.lineCap='round'; ctx.beginPath();ctx.moveTo(ax,ay);ctx.quadraticCurveTo((ax+bx)/2+nx*bend,(ay+by)/2+ny*bend,bx,by);ctx.stroke(); }
 
   // ==================================================================
@@ -269,10 +289,10 @@
     const s=shotData; let outcome, dnx=0, dny=0.5;
     if(s.result!=='ontarget'){ outcome='miss'; }
     else{
-      const bx=sshot.tx,by=sshot.ty, P=keeperPose(sgloves.x,sgloves.y,sgloves.throwInt||0,sgloves.throwDir||1);
-      const c=closestOnSeg(bx,by,P.footX,P.footY,P.hx,P.hy), d=Math.hypot(bx-c.x,by-c.y);
-      const saved=d<FS.reach; outcome=saved?'save':'goal';
-      if(saved){ sshot.catchX=c.x; sshot.catchY=c.y; }
+      const bx=sshot.tx,by=sshot.ty, br=Math.max(16,W*0.05);
+      const hit=ballHitsShapes(bx,by,br,keeperShapesS(sgloves.x,sgloves.y,sgloves.throwInt||0,sgloves.throwDir||1));
+      outcome=hit?'save':'goal';
+      if(hit){ sshot.catchX=lerp(bx,hit.cx,0.5); sshot.catchY=lerp(by,hit.cy,0.5); }
       dnx=(sgloves.x-FS.cx)/FS.goalHalf; dny=(sgloves.y-FS.goalTop)/(FS.goalLine-FS.goalTop);
     }
     applyOutcome(outcome, /*iAmShooter*/false, dnx, dny);
@@ -579,4 +599,3 @@
 </script>
 </body>
 </html>
-
