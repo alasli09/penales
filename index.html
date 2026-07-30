@@ -112,13 +112,15 @@ const V={
  kick:{ W:760,H:1500, bg:'art/bg_kick.jpg',
    PR:{TI:[0.0608,0.6134],TD:[0.9392,0.6134],BI:[0.0665,0.4665],BD:[0.9335,0.4665],spot:[0.5,0.2950]},
    kb:[0.2490,0.7510,0.1301,0.5411], ks:{img:'art/kick_sheet.png',cols:4,w:172,h:278},
-   gb:[0.2301,0.7699,0.4454,0.6659], gs:{img:'art/gk_sheet.png',cols:6,w:205,h:166} },
- save:{ W:760,H:1000, bg:'art/bg_save.jpg',
-   PR:{TI:[1.0037,0.5763],TD:[-0.0037,0.5763],BI:[0.9899,0.3271],BD:[0.0101,0.3271],spot:[0.5,0.4750]},
-   kb:[0.4453,0.5547,0.4571,0.5710], ks:{img:'art/save_kicker.png',cols:4,w:83,h:114},
-   gb:[0.1776,0.8224,0.2924,0.6610], gs:{img:'art/save_gk.png',cols:6,w:245,h:185} }
+   gb:[0.2301,0.7699,0.4454,0.6659], gs:{img:'art/gk_sheet.png',cols:8,w:168,h:136} },
+ save:{ W:760,H:1500, bg:'art/bg_save.jpg',
+   PR:{TI:[0.9827,0.5481],TD:[0.0173,0.5481],BI:[0.9720,0.3883],BD:[0.0280,0.3883],spot:[0.5,0.4818]},
+   kb:[0.4397,0.5603,0.4661,0.5546], ks:{img:'art/save_kicker.png',cols:4,w:91,h:132},
+   gb:[0.1956,0.8044,0.3625,0.6060], gs:{img:'art/save_gk.png',cols:8,w:194,h:154} }
 };
-const KS_CONTACT=8, KS_LAST=15, GS_FRAMES=6;
+const KS_CONTACT=8, KS_LAST=15;
+// 8 cuadros del arquero: 0-5 vuelo, 6-7 caida al piso
+const gkFrame=t => t<=1 ? Math.min(5,Math.round(t*5)) : Math.min(7, 6+Math.round((t-1)/0.35));
 // cuerpo real del arquero medido en Blender (metros): segmento pies -> manos
 const GOAL_HW=3.66, GOAL_H=2.44, TRAVEL=1.537, GK_R=0.41, DIVE_T=0.42;
 const DIVES=[
@@ -187,7 +189,7 @@ board();
 // ================= flujo =================
 function startMatch(){ sY=sR=kMine=kRiv=idx=0; pipY=[];pipR=[];over=null;done=false; board(); nextPen(); }
 function nextPen(){
-  shot=null; gk={type:2,t:0,launched:false}; drag=null; path=[]; anim=0; pend=null; hideB(); hideW();
+  shot=null; post=null; gk={type:2,t:0,launched:false}; drag=null; path=[]; anim=0; pend=null; hideB(); hideW();
   view = amShooter()?'kick':'save'; relayout();
   if(amShooter()){ ph=PH.ANN; rv.textContent='TÚ PATEAS'; rv.style.color='var(--save)';
     setH('Desliza <b>desde el balón</b>. Curva = efecto · recoge el dedo = cancelar · suave + ganchito = <b>panenka</b>'); }
@@ -266,6 +268,7 @@ function applyOutcome(o, iAmShooter, dnx, dny, dtype){
     else if(o==='save'){ banner('save','¡ATAJADA!','¡La sacaste!'); sfx.save(); flash=1; shake=9; if(dnx!=null){shot.cnx=dnx;shot.cny=dny;} shot.saved=true; burst(goalPt(dnx,dny),'#54C7FF'); }
     else banner('miss', o==='post'?'¡AL PALO!':o==='high'?'¡POR ENCIMA!':o==='wide'?'¡AFUERA!':'¡FLOJO!','El rival falló'), sfx.miss();
   }
+  startPost(o,dnx,dny);
   hideW(); registerOutcome(iAmShooter, scored);
 }
 function resolveAsKeeper(){
@@ -338,7 +341,7 @@ function drawBG(){ const v=VW(), k=(view==='kick'?'kbg':'sbg');
   if(LY.oy>0){ ctx.fillStyle='#061109'; ctx.fillRect(0,0,W,LY.oy+1); }
   if(LY.ox>0){ ctx.fillStyle='#061109'; ctx.fillRect(0,0,LY.ox+1,H); ctx.fillRect(W-LY.ox-1,0,LY.ox+1,H); } }
 function drawKeeper(){ const v=VW(), img=IMG[view==='kick'?'kgs':'sgs']; if(!img)return;
-  const d=DIVES[gk.type], p=Math.min(1,gk.t), i=Math.min(GS_FRAMES-1,Math.round(p*(GS_FRAMES-1)));
+  const d=DIVES[gk.type], p=Math.min(1,gk.t), i=gkFrame(gk.t);
   const halfU=(v.PR.BD[0]-v.PR.BI[0])/2;
   const r=rectB(v.gb, d.dir*0.42*p*halfU);
   ctx.drawImage(img, i*v.gs.w, d.row*v.gs.h, v.gs.w, v.gs.h, r.x,r.y,r.w,r.h); }
@@ -352,10 +355,22 @@ const ballR=t=>lerp(goalWpx()*(view==='kick'?0.058:0.020), goalWpx()*(view==='ki
 function ball(x,y,r){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
   ctx.fillStyle='#12291b'; ctx.beginPath(); ctx.arc(x-r*.18,y-r*.16,r*.27,0,7); ctx.fill();
   ctx.beginPath(); ctx.arc(x+r*.4,y+r*.3,r*.14,0,7); ctx.fill(); }
+// rebote / continuidad del balon despues del desenlace
+let post=null;
+function startPost(o,dnx,dny){
+  const tp=(o==='save'&&dnx!=null)?goalPt(dnx,dny):goalPt(shot.nx,shot.ny), sp=spotPt();
+  const away=(tp.x>=W/2?1:-1);
+  let vx,vy;
+  if(o==='save'){ vx=away*W*(0.55+Math.random()*0.45); vy=-H*(0.18+Math.random()*0.16); }   // sale rechazado
+  else if(o==='goal'){ vx=(tp.x-sp.x)*0.22; vy=H*0.10; }                                    // se hunde en la red
+  else { vx=(tp.x-sp.x)*0.45; vy=-H*0.06; }                                                 // se va de largo
+  post={x:tp.x,y:tp.y,vx,vy,r:ballR(1)};
+}
 function drawBall(){ const sp=spotPt();
+  if(post){ ball(post.x,post.y,post.r); return; }
   if(!shot || ph===PH.AIM || ph===PH.ANN || ph===PH.WIND){ ball(sp.x,sp.y,ballR(0)); return; }
   const t=clamp(shot.t,0,1);
-  const tp=(ph===PH.RES&&shot.saved&&shot.cnx!=null)?goalPt(shot.cnx,shot.cny):goalPt(shot.nx,shot.ny);
+  const tp=goalPt(shot.nx,shot.ny);
   const lift=(shot.pan?0.16:0.05*(shot.power||.5))*H*Math.sin(Math.PI*t);
   ball(lerp(sp.x,tp.x,t), lerp(sp.y,tp.y,easeIn(t))-lift, ballR(t)); }
 function drawAim(){
@@ -401,8 +416,10 @@ function frame(now){
   else if(ph===PH.INC&&shot){ anim+=dt; shot.t+=dt/shot.dur;
     if(gk.launched) gk.t=Math.min(1,gk.t+dt/DIVE_T);
     if(shot.t>=1){ shot.t=1; resolveAsKeeper(); } }
-  else if(ph===PH.RES){ anim+=dt; if(gk.launched||view==='kick') gk.t=Math.min(1,gk.t+dt/DIVE_T);
-    if(clock>1.6) afterRes(); }
+  else if(ph===PH.RES){ anim+=dt;
+    if(gk.launched||view==='kick') gk.t=Math.min(1.7,gk.t+dt/DIVE_T);   // sigue hasta caer al piso
+    if(post){ post.x+=post.vx*dt; post.y+=post.vy*dt; post.vy+=H*1.6*dt; post.vx*=(1-0.7*dt); }
+    if(clock>1.9) afterRes(); }
   ctx.clearRect(0,0,W,H); ctx.save();
   if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=.85; if(shake<.4)shake=0; }
   drawBG();

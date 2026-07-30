@@ -85,7 +85,8 @@ const BG_W=760, BG_H=1500;
 const B_KICK=[0.2490,0.7510,0.1301,0.5411];      // recorte del pateador (u0,u1,v0,v1)
 const B_GK  =[0.2301,0.7699,0.4454,0.6659];      // recorte del arquero
 const KS_COLS=4,KS_W=172,KS_H=278,KS_CONTACT=8,KS_LAST=15;
-const GS_COLS=6,GS_W=205,GS_H=166,GS_FRAMES=6;
+const GS_COLS=8,GS_W=168,GS_H=136;
+const gkFrame=t => t<=1 ? Math.min(5,Math.round(t*5)) : Math.min(7, 6+Math.round((t-1)/0.35));
 const PR={ TI:[0.0608,0.6134], TD:[0.9392,0.6134], BI:[0.0665,0.4665], BD:[0.9335,0.4665], spot:[0.5,0.2950] };
 // Cuerpo real del arquero medido en Blender (metros): segmento pies -> manos, quieto y estirado
 const GOAL_HW=3.66, GOAL_H=2.44, TRAVEL=1.537, GK_R=0.41;
@@ -244,7 +245,7 @@ function rectFromBorder(b,dxu){
 function drawKeeper(){
   if(!IMG.g) return;
   const d=DIVES[gk.type], p=Math.min(1,gk.t);
-  const i=Math.min(GS_FRAMES-1,Math.round(p*(GS_FRAMES-1)));
+  const i=gkFrame(gk.t);
   const sx=i*GS_W, sy=d.row*GS_H;
   const halfU=(PR.BD[0]-PR.BI[0])/2;
   const r=rectFromBorder(B_GK, d.dir*0.42*p*halfU);   // ademas del giro, se desplaza al palo
@@ -321,7 +322,7 @@ function frame(now){
   if(st===S.WIND){ anim+=dt; if(anim>=WIND_DUR){ st=S.FLY; shake=5; (shot.pan?sfx.chip:sfx.kick)(); } }
   else if(st===S.FLY&&shot){ anim+=dt; shot.t+=dt/shot.dur; gk.t=Math.min(1,gk.t+dt/0.42);
     if(shot.t>=1){ shot.t=1; finish(); } }
-  else if(st===S.RES){ anim+=dt; gk.t=Math.min(1,gk.t+dt/0.42); }
+  else if(st===S.RES){ anim+=dt; gk.t=Math.min(1.7,gk.t+dt/0.42); }
   ctx.clearRect(0,0,W,H); ctx.save();
   if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=.85; if(shake<.4)shake=0; }
   drawBG(); drawKeeper(); drawBall(); drawKicker(); drawAim(); drawParts();
