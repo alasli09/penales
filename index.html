@@ -86,6 +86,7 @@
       <p>Cada quien en su celular. Uno crea la sala y comparte el código; el otro se une.</p>
       <div id="home">
         <div class="row"><button class="btn p" id="bCreate">Crear sala</button><button class="btn s" id="bJoinV">Unirme</button></div>
+        <button class="btn s" id="bSolo" style="width:100%;margin-top:10px">⚽ Entrenar solo (offline)</button>
       </div>
       <div id="hostV" class="hidden">
         <div class="code"><div class="ck">Tu código</div><div class="cv" id="myCode">····</div></div>
@@ -307,6 +308,7 @@ $('bCreate').addEventListener('click',()=>{ ac()&&AC.resume&&AC.resume();
     peer.on('error',e=>hSt('Error: '+(e.type||'reintenta'),true));
   }catch(e){ hSt('No se pudo crear la sala.',true); } });
 $('bJoinV').addEventListener('click',()=>{ sv('join'); $('ci').focus(); });
+$('bSolo').addEventListener('click',()=>{ location.href='practica.html'; });
 $('hBack').addEventListener('click',()=>{ if(peer){peer.destroy();peer=null;} sv('home'); });
 $('jBack').addEventListener('click',()=>{ if(peer){peer.destroy();peer=null;} sv('home'); });
 $('ci').addEventListener('input',e=>{ e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });

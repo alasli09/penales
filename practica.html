@@ -71,6 +71,7 @@
         <li class="m"><span class="n">3</span><span><b style="color:var(--magic)">Panenka:</b> desliza <b>suave</b> y haz un <b>ganchito atrás</b>. Suelta en la zona <b>verde</b>.</span></li>
       </ul>
       <button class="play" id="btnPlay">Jugar</button>
+      <a href="index.html" style="display:block;margin-top:12px;text-align:center;color:#8AA396;font-size:13px">← Volver al duelo online</a>
     </div>
   </div>
   <div class="load" id="load">Cargando estadio…</div>
@@ -177,7 +178,7 @@ function release(){
   gk.t=0;
   if(A.pan){
     const clean=tqual()>0.6, nx=clamp((clean?A.nx:A.nx*0.5)*0.80,-0.95,0.95);
-    shot={pan:true,clean,nx,ny:clean?0.46:0.30,dur:1.15,t:0,res:'ontarget'};
+    shot={pan:true,clean,nx,ny:clean?0.46:0.30,dur:1.45,t:0,res:'ontarget'};
   } else {
     const nx=A.nx, ny=A.ny;
     let res='ontarget';
@@ -185,7 +186,7 @@ function release(){
     else if(ny>1.02) res='high';
     else if(Math.abs(nx)>1.02) res='wide';
     else if(ny>0.94||Math.abs(nx)>0.94) res='post';
-    shot={pan:false,nx:clamp(nx,-1.6,1.6),ny:clamp(ny,0,1.5),power:A.power,dur:0.92-A.power*0.26,t:0,res};
+    shot={pan:false,nx:clamp(nx,-1.6,1.6),ny:clamp(ny,0,1.5),power:A.power,dur:1.25-A.power*0.28,t:0,res};
   }
   drag=null; path=[]; anim=0; st=S.WIND;
 }
@@ -319,10 +320,12 @@ function drawParts(){ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p
 // ===== loop =====
 function frame(now){
   const dt=last?Math.min(.05,(now-last)/1000):0; last=now; clock+=dt;
-  if(st===S.WIND){ anim+=dt; if(anim>=WIND_DUR){ st=S.FLY; shake=5; (shot.pan?sfx.chip:sfx.kick)(); } }
-  else if(st===S.FLY&&shot){ anim+=dt; shot.t+=dt/shot.dur; gk.t=Math.min(1,gk.t+dt/0.42);
-    if(shot.t>=1){ shot.t=1; finish(); } }
-  else if(st===S.RES){ anim+=dt; gk.t=Math.min(1.7,gk.t+dt/0.42); }
+  if(st===S.WIND){ anim+=dt; if(anim>=WIND_DUR){ st=S.FLY; shot.t0=clock; shake=5; (shot.pan?sfx.chip:sfx.kick)(); } }
+  else if(st===S.FLY&&shot){ anim+=dt;
+    shot.t=clamp((clock-(shot.t0||clock))/(shot.dur||1.2),0,1);   // por reloj: seguro en iPhone y Android
+    gk.t=Math.min(1,gk.t+dt/0.32);
+    if(shot.t>=1 && !shot.done){ shot.done=true; finish(); } }
+  else if(st===S.RES){ anim+=dt; gk.t=Math.min(1.7,gk.t+dt/0.32); }
   ctx.clearRect(0,0,W,H); ctx.save();
   if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=.85; if(shake<.4)shake=0; }
   drawBG(); drawKeeper(); drawBall(); drawKicker(); drawAim(); drawParts();
