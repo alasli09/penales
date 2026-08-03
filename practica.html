@@ -66,11 +66,20 @@
     <div class="card">
       <p class="tag">Práctica · escena 3D</p>
       <h1>Tira y <span>engaña</span></h1>
+      <p style="margin:0 0 10px;font-size:13.5px;line-height:1.5;color:#C6D6CC">
+        Cada penal son <b>dos cosas que se combinan</b>:</p>
       <ul class="steps">
-        <li><span class="n">1</span><span><b>Apunta:</b> desliza desde el balón al rincón. Ves la mira y la potencia.</span></li>
-        <li><span class="n">2</span><span><b>Cancelar:</b> regresa el dedo al balón → aparece una <b>✕</b>.</span></li>
-        <li class="m"><span class="n">3</span><span><b style="color:var(--magic)">Panenka:</b> desliza <b>suave</b> y haz un <b>ganchito atrás</b>. Suelta en la zona <b>verde</b>.</span></li>
+        <li><span class="n">🏃</span><span><b>La carrera</b> (botones de abajo): normal, paradinha, corta… Se elige una vez y queda puesta.</span></li>
+        <li><span class="n">👆</span><span><b>El golpe</b> (tu dedo): según cómo deslices sale una forma distinta.</span></li>
       </ul>
+      <p style="margin:12px 0 0;font-size:12.5px;line-height:1.7;color:#B9CCC0">
+        Recto y fuerte → <b style="color:#FF6A3D">empeine</b><br>
+        Curvando hacia <b>afuera</b> → <b style="color:#B4F25E">trivela</b><br>
+        Curvando hacia <b>adentro</b> → <b style="color:#54C7FF">interior</b><br>
+        Deslizamiento <b>bajito</b> → <b style="color:#FFD166">rasante</b><br>
+        Suave + <b>ganchito atrás</b> → <b style="color:#C08BFF">panenka</b> (suelta en verde)<br>
+        Regresa el dedo al balón → <b style="color:#FF3B3B">✕ cancelar</b>
+      </p>
       <button class="play" id="btnPlay">Jugar</button>
       <a href="index.html" style="display:block;margin-top:12px;text-align:center;color:#8AA396;font-size:13px">← Volver al duelo online</a>
     </div>
@@ -279,7 +288,12 @@ $('btnPlay').addEventListener('click',()=>{ $('intro').classList.add('hide'); ac
 // ---- selector de ESTILO de pateo (capa A) ----
 (function(){
   const box=$('styles');
-  box.style.cssText='position:absolute;left:0;right:0;bottom:62px;z-index:7;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 10px;pointer-events:auto';
+  box.style.cssText='position:absolute;left:0;right:0;bottom:58px;z-index:7;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 10px;pointer-events:auto';
+  const ttl=document.createElement('div');
+  ttl.textContent='🏃 Carrera';
+  ttl.style.cssText='width:100%;text-align:center;font-family:var(--display);text-transform:uppercase;letter-spacing:.18em;'+
+    'font-size:9px;font-weight:700;color:#8AA396;margin-bottom:2px;text-shadow:0 2px 6px #000';
+  box.appendChild(ttl);
   for(const k in STYLES){ const s=STYLES[k];
     const b=document.createElement('button'); b.dataset.k=k;
     b.textContent=s.ready?s.n:s.n+' 🔒';
