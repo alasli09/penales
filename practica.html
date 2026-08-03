@@ -61,6 +61,7 @@
     <div class="banner" id="banner"><div class="big" id="bBig"></div><div class="sub" id="bSub"></div></div>
     <div class="hint" id="hint">Desliza <b>desde el balón</b> hacia el arco</div>
   </div>
+  <div id="styles"></div>
   <div class="intro hide" id="intro">
     <div class="card">
       <p class="tag">Práctica · escena 3D</p>
@@ -162,10 +163,42 @@ function analyze(){
   const ny=clamp(Math.max(0,-dy)/(H*0.30),0,1.5);
   const tiny=len<16, back=b.y>a.y-H*0.035, cancel=tiny||back;
   const pan=!cancel && power<0.45 && rose>H*0.06 && hook>H*0.03 && up>H*0.05;
-  return {dx,dy,len,power,nx,ny,pan,cancel,back,tiny};
+  // curvatura del trazo del dedo (signo = hacia dónde comba)
+  let sb=0; if(len>1){ const m=path[path.length>>1]; sb=((b.x-a.x)*(a.y-m.y)-(a.x-m.x)*(b.y-a.y))/len; }
+  const cb=sb/(W*0.16);
+  // ---- CAPA B: la FORMA de tiro sale del gesto ----
+  let form='empeine';
+  if(pan) form='picado';
+  else if(ny<0.17 && power>0.26) form='rasante';
+  else if(Math.abs(cb)>0.30) form=(cb*(nx>=0?1:-1)>0)?'trivela':'interior';
+  return {dx,dy,len,power,nx,ny,pan,cancel,back,tiny,cb,form};
 }
 const tmark=()=>0.5+0.5*Math.sin(clock*4.2);
 const tqual=()=>clamp(1-Math.abs(tmark()-0.5)/0.5,0,1);
+
+/* ===================== SISTEMA DE TIROS EN DOS CAPAS =====================
+   CAPA A · ESTILO  = cómo se prepara y golpea (animación / carrera / finta)
+   CAPA B · FORMA   = qué le hace al balón (contacto y física)
+   Son independientes: cualquier estilo se combina con cualquier forma.      */
+const G=9.8, D_CAM=10.5, D_GOAL=21.5;              // metros: cámara→balón y cámara→arco
+const persp=t=>{ const d=D_CAM+(D_GOAL-D_CAM)*t;   // progreso REAL en pantalla (perspectiva)
+  return (1/D_CAM-1/d)/(1/D_CAM-1/D_GOAL); };
+
+const STYLES={
+  normal   :{n:'Normal',    from:0, wind:0.62, hold:0,    acc:0.00, ready:true},
+  paradinha:{n:'Paradinha', from:0, wind:0.62, hold:0.42, acc:0.02, ready:true, mind:0.22},
+  corta    :{n:'C. corta',  from:5, wind:0.30, hold:0,    acc:0.05, ready:true},
+  rabona   :{n:'Rabona',    from:0, wind:0.70, hold:0,    acc:0.12, ready:false},
+  toque    :{n:'Toque',     from:0, wind:0.55, hold:0.15, acc:0.06, ready:false},
+};
+const FORMS={
+  empeine :{n:'Empeine',  T:0.60, bend: 0.00, hCap:1.10, acc:0.055, col:'#FF6A3D'},
+  interior:{n:'Interior', T:0.74, bend:-0.55, hCap:0.92, acc:0.018, col:'#54C7FF'},
+  trivela :{n:'Trivela',  T:0.70, bend: 1.00, hCap:1.00, acc:0.040, col:'#B4F25E'},
+  rasante :{n:'Rasante',  T:0.64, bend: 0.15, hCap:0.30, acc:0.030, col:'#FFD166'},
+  picado  :{n:'Panenka',  T:1.28, bend: 0.00, hCap:0.62, acc:0.030, col:'#C08BFF'},
+};
+let styleKey='normal';
 
 function release(){
   const A=analyze();
@@ -174,20 +207,28 @@ function release(){
   // el arquero elige lado Y altura (sin ver el tiro): 35% lee bien la zona, resto al azar
   const nxp=A.pan?A.nx*0.8:A.nx, nyp=A.pan?0.4:A.ny;
   const zone = Math.abs(nxp)<0.30 ? 2 : (nxp<0 ? (nyp<0.5?0:1) : (nyp<0.5?4:3));
-  gk.type = Math.random()<0.35 ? zone : (Math.random()*5)|0;
+  const read=0.35-(STYLES[styleKey].mind||0);   // la paradinha descoloca al arquero
+  gk.type = Math.random()<read ? zone : (Math.random()*5)|0;
   gk.t=0;
-  if(A.pan){
-    const clean=tqual()>0.6, nx=clamp((clean?A.nx:A.nx*0.5)*0.80,-0.95,0.95);
-    shot={pan:true,clean,nx,ny:clean?0.46:0.30,dur:1.45,t:0,res:'ontarget'};
-  } else {
-    const nx=A.nx, ny=A.ny;
-    let res='ontarget';
-    if(A.power<0.14) res='short';
-    else if(ny>1.02) res='high';
-    else if(Math.abs(nx)>1.02) res='wide';
-    else if(ny>0.94||Math.abs(nx)>0.94) res='post';
-    shot={pan:false,nx:clamp(nx,-1.6,1.6),ny:clamp(ny,0,1.5),power:A.power,dur:1.25-A.power*0.28,t:0,res};
-  }
+  // ===== combinación ESTILO × FORMA =====
+  const S1=STYLES[styleKey], F=FORMS[A.form];
+  const pan=A.form==='picado', clean=pan?tqual()>0.6:true;
+  // puntería: error segun la precisión de la forma + el estilo (menos control = más dispersión)
+  const err=(F.acc+S1.acc)*(pan&&!clean?2.2:1);
+  const rnd=()=>(Math.random()*2-1)*err;
+  let nx=A.nx*(pan?(clean?0.80:0.45):1)+rnd()*1.5;
+  let ny=Math.min(pan?(clean?0.46:0.30):A.ny, F.hCap)+rnd();
+  ny=Math.max(0,ny);
+  let res='ontarget';
+  if(!pan && A.power<0.14) res='short';
+  else if(ny>1.02) res='high';
+  else if(Math.abs(nx)>1.02) res='wide';
+  else if(ny>0.94||Math.abs(nx)>0.94) res='post';
+  // la potencia acelera un poco el vuelo dentro de cada forma
+  const T=F.T*(pan?1:(1.12-0.22*clamp(A.power,0,1.4)));
+  shot={form:A.form,style:styleKey,pan,clean,
+        nx:clamp(nx,-1.6,1.6), ny:clamp(ny,0,1.5), power:A.power,
+        dur:T, lift:0.5*G*T*T, bend:F.bend*(nx>=0?1:-1), col:F.col, tag:F.n, t:0, res};
   drag=null; path=[]; anim=0; st=S.WIND;
 }
 
@@ -214,7 +255,8 @@ function finish(){
     if(!hit){
       goals++; $('sG').textContent=goals; flash=1; shake=9;
       if(s.pan){ pans++; $('sP').textContent=pans; cls='pan'; big='¡PANENKA!'; sub=s.clean?'Con clase':'Coló'; sfx.pan(); }
-      else { cls='goal'; big='¡GOL!'; sub=Math.abs(s.nx)>0.6?'¡Al ángulo!':'¡Adentro!'; sfx.goal(); }
+      else { cls='goal'; big='¡GOL!'; sfx.goal();
+        sub=STYLES[s.style].n+' + '+s.tag+(Math.abs(s.nx)>0.62?' · ¡al ángulo!':''); }
       burst(goalPt(s.nx,s.ny), s.pan?'#C08BFF':'#B4F25E');
     } else { cls='save'; big='¡ATAJADA!'; sub='El arquero llegó'; sfx.save(); shake=7; burst(goalPt(s.nx,s.ny),'#54C7FF'); }
   } else if(s.res==='post'){ cls='miss'; big='¡AL PALO!'; sub='Rozó el madero'; sfx.post(); shake=7; }
@@ -234,6 +276,21 @@ function hideBanner(){ bn.className='banner'; }
 $('btnHelp').addEventListener('click',()=>$('intro').classList.remove('hide'));
 $('btnPlay').addEventListener('click',()=>{ $('intro').classList.add('hide'); ac()&&AC.resume&&AC.resume(); started=true; });
 
+// ---- selector de ESTILO de pateo (capa A) ----
+(function(){
+  const box=$('styles');
+  box.style.cssText='position:absolute;left:0;right:0;bottom:62px;z-index:7;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:0 10px;pointer-events:auto';
+  for(const k in STYLES){ const s=STYLES[k];
+    const b=document.createElement('button'); b.dataset.k=k;
+    b.textContent=s.ready?s.n:s.n+' 🔒';
+    b.style.cssText='font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:11px;'+
+      'padding:7px 11px;border-radius:9px;cursor:pointer;backdrop-filter:blur(6px);'+
+      'background:rgba(6,18,11,.72);color:'+(s.ready?'#EAF3EC':'#5c6f63')+';border:1px solid '+(k===styleKey?'#FF6A3D':'rgba(150,196,168,.22)');
+    b.onclick=()=>{ if(!s.ready) return; styleKey=k;
+      [...box.children].forEach(c=>c.style.borderColor=(c.dataset.k===k)?'#FF6A3D':'rgba(150,196,168,.22)'); };
+    box.appendChild(b); }
+})();
+
 // ===== dibujo =====
 function drawBG(){
   if(IMG.bg) ctx.drawImage(IMG.bg, LY.ox, LY.oy, BG_W*LY.sc, BG_H*LY.sc);
@@ -252,7 +309,24 @@ function drawKeeper(){
   const r=rectFromBorder(B_GK, d.dir*0.42*p*halfU);   // ademas del giro, se desplaza al palo
   ctx.drawImage(IMG.g, sx,sy,GS_W,GS_H, r.x,r.y,r.w,r.h);
 }
+// ---- CAPA A: el ESTILO decide la carrera: desde qué cuadro arranca, cuánto dura y si hay finta
+const stl=()=>STYLES[(shot&&shot.style)||styleKey];
+const windDur=()=>{const s=stl();return s.wind+s.hold;};
 function kickIdx(){
+  const s=stl();
+  if(st===S.READY||st===S.AIM) return s.from;
+  if(anim<windDur()){
+    let a=anim;
+    if(s.hold>0){                                   // PARADINHA: se frena a mitad de carrera
+      const hAt=s.wind*0.60;
+      if(a>hAt && a<hAt+s.hold) a=hAt;              // congela el cuadro (la finta)
+      else if(a>=hAt+s.hold) a-=s.hold;
+    }
+    return s.from+(a/s.wind)*(KS_CONTACT-s.from);
+  }
+  return Math.min(KS_LAST, KS_CONTACT+((anim-windDur())/FOLLOW)*(KS_LAST-KS_CONTACT));
+}
+function kickIdxOld(){
   if(st===S.READY||st===S.AIM) return 0;
   if(anim<WIND_DUR) return (anim/WIND_DUR)*KS_CONTACT;
   return Math.min(KS_LAST, KS_CONTACT+((anim-WIND_DUR)/FOLLOW)*(KS_LAST-KS_CONTACT));
@@ -264,15 +338,18 @@ function drawKicker(){
   const r=rectFromBorder(B_KICK);
   ctx.drawImage(IMG.k, sx,sy,KS_W,KS_H, r.x,r.y,r.w,r.h);
 }
-function ballR(t){ const near=goalWpx()*0.058, far=goalWpx()*0.026; return lerp(near,far,t); }
+// el balón se ve más pequeño según se aleja (escala 1/distancia, no lineal)
+function ballR(t){ const d=D_CAM+(D_GOAL-D_CAM)*t; return goalWpx()*0.062*(D_CAM/d); }
 function drawBall(){
   const sp=spotPt();
   if(st===S.READY||st===S.AIM||st===S.WIND||!shot){ ball(sp.x,sp.y,ballR(0)); return; }
-  const t=clamp(shot.t,0,1);
-  let tp = (st===S.RES && shot.saved && shot.cnx!=null) ? goalPt(shot.cnx,shot.cny) : goalPt(shot.nx,shot.ny);
-  const lift=(shot.pan?0.16:0.05*(shot.power||.5))*H*Math.sin(Math.PI*t);
-  const x=lerp(sp.x,tp.x,t), y=lerp(sp.y,tp.y,easeIn(t))-lift;
-  ball(x,y,ballR(t));
+  const t=clamp(shot.t,0,1), s=persp(t);          // MISMO progreso para x e y: sin desvíos raros
+  const tp=(st===S.RES&&shot.saved&&shot.cnx!=null)?goalPt(shot.cnx,shot.cny):goalPt(shot.nx,shot.ny);
+  // arco parabólico real: 0.5·g·T²·t(1-t) metros -> píxeles. T corto = tiro seco, T largo = vaselina
+  const gh=Math.abs(goalPt(0,1).y-goalPt(0,0).y);
+  const arcPx=(shot.lift*t*(1-t)/GOAL_H)*gh*lerp(1.9,1.0,s);
+  const bendPx=shot.bend*goalWpx()*0.16*Math.sin(Math.PI*t);
+  ball(lerp(sp.x,tp.x,s)+bendPx, lerp(sp.y,tp.y,s)-arcPx, ballR(t));
 }
 function ball(x,y,r){
   ctx.fillStyle='rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x,spotPt().y+r*0.5,r*0.85,r*0.3,0,0,7); ctx.fill();
@@ -302,7 +379,9 @@ function drawAim(){
   ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=2.5;
   ctx.beginPath(); ctx.arc(g.x,g.y,12,0,7); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(g.x-6,g.y); ctx.lineTo(g.x+6,g.y); ctx.moveTo(g.x,g.y-6); ctx.lineTo(g.x,g.y+6); ctx.stroke();
-  bar(clamp(A.power/1.4,0,1),false); lab('TIRO','#EAF3EC');
+  const F=FORMS[A.form];
+  bar(clamp(A.power/1.4,0,1),false);
+  lab(STYLES[styleKey].n.toUpperCase()+' · '+F.n.toUpperCase(), F.col);
 }
 function bar(v,timing){
   const bw=W*0.6,bx=(W-bw)/2,by=H-46,bh=11;
@@ -320,7 +399,7 @@ function drawParts(){ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p
 // ===== loop =====
 function frame(now){
   const dt=last?Math.min(.05,(now-last)/1000):0; last=now; clock+=dt;
-  if(st===S.WIND){ anim+=dt; if(anim>=WIND_DUR){ st=S.FLY; shot.t0=clock; shake=5; (shot.pan?sfx.chip:sfx.kick)(); } }
+  if(st===S.WIND){ anim+=dt; if(anim>=windDur()){ st=S.FLY; shot.t0=clock; shake=shot.pan?3:7; (shot.pan?sfx.chip:sfx.kick)(); } }
   else if(st===S.FLY&&shot){ anim+=dt;
     shot.t=clamp((clock-(shot.t0||clock))/(shot.dur||1.2),0,1);   // por reloj: seguro en iPhone y Android
     gk.t=Math.min(1,gk.t+dt/0.32);
