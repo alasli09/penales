@@ -59,7 +59,7 @@
       <div class="btns"><button class="icon" id="btnHelp" aria-label="Ayuda">?</button></div>
     </div>
     <div class="banner" id="banner"><div class="big" id="bBig"></div><div class="sub" id="bSub"></div></div>
-    <div class="hint" id="hint">Desliza <b>desde el balón</b> hacia el arco</div>
+    <div class="hint" id="hint">Desliza <b>desde el balón</b> · la <b>velocidad</b> del dedo es la potencia · quieto = baja</div>
   </div>
   <div id="styles"></div>
   <div class="intro hide" id="intro">
@@ -71,14 +71,15 @@
       <ul class="steps">
         <li><span class="n">🏃</span><span><b>La carrera</b> (botones de abajo): normal, paradinha, corta… Se elige una vez y queda puesta.</span></li>
         <li><span class="n">👆</span><span><b>El golpe</b> (tu dedo): según cómo deslices sale una forma distinta.</span></li>
+        <li class="m"><span class="n">⚡</span><span><b>La potencia</b> (barra de la izquierda): la carga la <b>velocidad</b> de tu dedo y se queda con el pico. Pasar la línea <b>CONTROL</b> = puntería que se te va. ¿Te pasaste? <b>Dejá el dedo quieto</b> apoyado y baja sola.</span></li>
       </ul>
       <p style="margin:12px 0 0;font-size:12.5px;line-height:1.7;color:#B9CCC0">
         Recto y fuerte → <b style="color:#FF6A3D">empeine</b><br>
         Curvando hacia <b>afuera</b> → <b style="color:#B4F25E">trivela</b><br>
         Curvando hacia <b>adentro</b> → <b style="color:#54C7FF">interior</b><br>
-        Deslizamiento <b>bajito</b> → <b style="color:#FFD166">rasante</b><br>
+        Deslizamiento <b>horizontal</b>, sin subir → <b style="color:#FFD166">rasante</b><br>
         Suave + <b>ganchito atrás</b> → <b style="color:#C08BFF">panenka</b> (suelta en verde)<br>
-        Regresa el dedo al balón → <b style="color:#FF3B3B">✕ cancelar</b>
+        Traer el dedo <b>de vuelta al balón</b> → <b style="color:#FF3B3B">✕ cancelar</b>
       </p>
       <button class="play" id="btnPlay">Jugar</button>
       <a href="index.html" style="display:block;margin-top:12px;text-align:center;color:#8AA396;font-size:13px">← Volver al duelo online</a>
@@ -160,9 +161,23 @@ const WIND_DUR=0.62, FOLLOW=0.55;
 const pt=e=>{const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};};
 cv.addEventListener('pointerdown',e=>{ if(!started||st!==S.READY)return; ac()&&AC.resume&&AC.resume();
   cv.setPointerCapture(e.pointerId); const p=pt(e); p.t=performance.now();
-  drag={sx:p.x,sy:p.y,cx:p.x,cy:p.y}; path=[p]; st=S.AIM; });
+  drag={sx:p.x,sy:p.y,cx:p.x,cy:p.y,peak:0,tMove:p.t,settle:false}; path=[p]; st=S.AIM; });
 cv.addEventListener('pointermove',e=>{ if(st!==S.AIM)return; const p=pt(e); p.t=performance.now();
-  drag.cx=p.x;drag.cy=p.y; path.push(p); if(path.length>80)path.shift(); });
+  drag.cx=p.x;drag.cy=p.y; drag.tMove=p.t;
+  // velocidad instantánea (ventana de 3 muestras) normalizada: 1.0 = deslizamiento firme.
+  // Se guarda el PICO: si frenás justo antes de soltar el tiro NO se desinfla.
+  // Ventana de tiempo REAL (>=30 ms): si se miden 2 eventos del mismo frame la división
+  // por un dt diminuto inventa picos falsos y el tiro sale descontrolado sin motivo.
+  let ref=path[path.length-1];
+  for(let i=path.length-1;i>=0;i--){ ref=path[i]; if(p.t-(ref.t||p.t)>=30) break; }
+  const dt=p.t-(ref.t||p.t);
+  // referencia: 1.0 ≈ recorrer un cuarto de pantalla en 0.1 s (flick firme, no violento)
+  if(dt>=12) drag.peak=Math.max(drag.peak, Math.hypot(p.x-ref.x,p.y-ref.y)/dt/(H*0.0026));
+  path.push(p);
+  // BUG QUE ROMPÍA EL RASANTE: antes era path.shift(), que borraba el ORIGEN del gesto.
+  // En un deslizamiento largo/lento (>80 eventos = 0.7 s en pantallas de 120 Hz) el punto de
+  // partida se corría hacia adelante: el tiro salía flojo, corto y a veces se auto-cancelaba.
+  if(path.length>90) path.splice(1,1); });
 cv.addEventListener('pointerup',()=>{ if(st===S.AIM) release(); });
 cv.addEventListener('pointercancel',()=>{ if(st===S.AIM){st=S.READY;drag=null;path=[];} });
 
@@ -171,18 +186,19 @@ function analyze(){
   const a=path[0], b=path[path.length-1], dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy);
   let minY=a.y; for(const q of path) if(q.y<minY)minY=q.y;
   const rose=a.y-minY, hook=b.y-minY, up=a.y-b.y;
-  // --- CANCELAR = el dedo se alejó y VOLVIÓ al balón (ya no "no subió lo suficiente") ---
+  // --- CANCELAR = el dedo VOLVIÓ físicamente al balón. Nada más.
+  //     (antes bastaba con "no se alejó lo suficiente", y eso mataba todo tiro horizontal) ---
   let far=0; for(const q of path) far=Math.max(far,Math.hypot(q.x-a.x,q.y-a.y));
-  const tiny=far<W*0.045, back=far>W*0.10 && len<far*0.38, cancel=tiny||back;
-  // --- POTENCIA = velocidad del gesto (px/ms) sobre los últimos tramos ---
-  let sp=0; for(let i=Math.max(1,path.length-6);i<path.length;i++){
-    const q=path[i],r0=path[i-1],dt=Math.max(1,(q.t||0)-(r0.t||0));
-    sp=Math.max(sp,Math.hypot(q.x-r0.x,q.y-r0.y)/dt); }
-  const spd=sp/(W*0.0042);                       // 1.0 ≈ deslizamiento firme
-  const power=clamp(spd*0.62+len/(H*0.55)*0.38,0.05,1.9);
+  const tiny=far<W*0.045;
+  const back=far>W*0.14 && len<Math.max(W*0.075, far*0.30);
+  const cancel=tiny||back;
+  // --- POTENCIA: pico de velocidad del gesto, con un piso por distancia recorrida.
+  //     El piso evita el "FLOJO, no llega" cuando deslizás largo pero tranquilo. ---
+  const lenN=clamp(len/(H*0.30),0,1);
+  const power=clamp(Math.max(drag.peak||0, lenN*0.72),0.05,1.9);
   const nx=clamp(dx/(W*0.30),-1.9,1.9);
   const ny=clamp(Math.max(0,-dy)/(H*0.30),0,1.5);   // 0 = rasante, ya no cancela
-  const pan=!cancel && power<0.55 && rose>H*0.05 && hook>H*0.025 && up>H*0.04;
+  const pan=!cancel && power<0.72 && rose>H*0.05 && hook>H*0.025 && up>H*0.04;
   // curvatura del trazo del dedo (signo = hacia dónde comba)
   let sb=0; if(len>1){ const m=path[path.length>>1]; sb=((b.x-a.x)*(a.y-m.y)-(a.x-m.x)*(b.y-a.y))/len; }
   const cb=sb/(W*0.16);
@@ -223,6 +239,15 @@ const FORMS={
 };
 let styleKey='normal';
 
+/* ===================== LA POTENCIA ES UNA MECÁNICA =====================
+   1. La VELOCIDAD del dedo la carga, y el medidor se queda con el PICO.
+   2. Si te pasaste de fuerza: MANTENÉ EL DEDO QUIETO y la potencia baja sola
+      hasta tu piso por distancia. Así acomodás el tiro sin volver a empezar.
+   3. Pasar la marca "safe" del estilo = puntería que se descontrola (zona roja). */
+const PW_REF=1.35, MXP=125;                       // 1.35 de gesto = tope del rango del estilo
+const pw2P=(power,S1)=>S1.pMin+(S1.pMax-S1.pMin)*clamp(power/PW_REF,0,1);
+let lastP=null, lastOver=false;                   // fantasma del tiro anterior en el medidor
+
 function release(){
   const A=analyze();
   if(!A||A.cancel){ st=S.READY; drag=null; path=[]; return; }
@@ -237,8 +262,9 @@ function release(){
   const S1=STYLES[styleKey], F=FORMS[A.form];
   const pan=A.form==='picado', clean=pan?tqual()>0.6:true;
   // POTENCIA 0-100 dentro del rango del estilo; pasarse del "safe" descontrola el tiro
-  const P=S1.pMin+(S1.pMax-S1.pMin)*clamp(A.power/1.5,0,1);
+  const P=pw2P(A.power,S1);
   const over=Math.max(0,P-S1.safe)/Math.max(1,120-S1.safe);   // 0 = controlado, 1 = brutal
+  lastP=Math.round(P); lastOver=over>0;
   // puntería: error segun la precisión de la forma + el estilo + el exceso de fuerza
   const err=(F.acc+S1.acc+over*over*0.42)*(pan&&!clean?2.2:1);
   const rnd=()=>(Math.random()*2-1)*err;
@@ -246,12 +272,12 @@ function release(){
   let ny=Math.min(pan?(clean?0.46:0.30):A.ny, F.hCap)+rnd();
   ny=Math.max(0,ny)+over*over*0.55*Math.random();   // demasiada fuerza -> se va por arriba
   let res='ontarget';
-  if(!pan && A.power<0.14) res='short';
+  if(!pan && P<12) res='short';                 // solo un roce sin intención: antes cortaba tiros válidos
   else if(ny>1.02) res='high';
   else if(Math.abs(nx)>1.02) res='wide';
   else if(ny>0.94||Math.abs(nx)>0.94) res='post';
-  // la potencia acelera un poco el vuelo dentro de cada forma
-  const T=F.T*(pan?1:(1.12-0.22*clamp(A.power,0,1.4)));
+  // la potencia manda en la velocidad del vuelo: se tiene que SENTIR la diferencia
+  const T=F.T*(pan?1:(1.25-0.34*clamp(A.power,0,1.4)));
   shot={form:A.form,style:styleKey,foot:footed,pan,clean,P:Math.round(P),
         nx:clamp(nx,-1.6,1.6), ny:clamp(ny,0,1.5), power:A.power,
         dur:T, lift:0.5*G*T*T, bend:F.bend*(nx>=0?1:-1), col:F.col, tag:F.n, t:0, res};
@@ -291,6 +317,9 @@ function finish(){
   else if(s.res==='high'){ cls='miss'; big='¡POR ENCIMA!'; sub='Demasiada altura'; sfx.miss(); }
   else if(s.res==='wide'){ cls='miss'; big='¡AFUERA!'; sub='Fuera de los palos'; sfx.miss(); }
   else { cls='miss'; big='¡FLOJO!'; sub='Poca potencia'; sfx.miss(); }
+  // el resultado siempre dice con cuánta fuerza pegaste: así la barra se aprende sola
+  const S1=STYLES[s.style];
+  sub=(sub?sub+' · ':'')+'Pot '+s.P+(s.P>S1.safe?' ⚠ pasado de fuerza':'');
   banner(cls,big,sub); st=S.RES; clock=0;
   setTimeout(()=>{ hideBanner(); shot=null; gk={type:2,t:0}; anim=0; st=S.READY; },1500);
 }
@@ -444,31 +473,75 @@ function drawAim(){
   ctx.beginPath(); ctx.arc(g.x,g.y,12,0,7); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(g.x-6,g.y); ctx.lineTo(g.x+6,g.y); ctx.moveTo(g.x,g.y-6); ctx.lineTo(g.x,g.y+6); ctx.stroke();
   const F=FORMS[A.form], S1=STYLES[styleKey];
-  powerBar(S1.pMin+(S1.pMax-S1.pMin)*clamp(A.power/1.5,0,1), S1);
   lab(S1.n.toUpperCase()+' · '+F.n.toUpperCase(), F.col);
 }
-// barra 0-100 (o el rango del estilo). Lo que pasa del "safe" es zona de descontrol.
-function powerBar(P,S1){
-  const bw=W*0.66,bx=(W-bw)/2,by=H-48,bh=13, MX=125;
-  ctx.fillStyle='rgba(0,0,0,.55)'; rr(bx,by,bw,bh,7); ctx.fill();
-  ctx.fillStyle='rgba(255,59,59,.30)';                       // zona roja (pasarse de fuerza)
-  rr(bx+bw*(S1.safe/MX),by,bw*(1-S1.safe/MX),bh,7); ctx.fill();
-  const f=clamp(P/MX,0,1);
-  ctx.fillStyle = P>S1.safe?'#FF3B3B' : P>S1.safe*0.72?'#FF6A3D':'#B4F25E';
-  rr(bx,by,bw*f,bh,7); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(bx+bw*(S1.safe/MX)-1,by-3,2,bh+6);   // marca de control
-  if(S1.pMin>0){ ctx.fillStyle='rgba(255,255,255,.45)'; ctx.fillRect(bx+bw*(S1.pMin/MX)-1,by,2,bh); }
-  ctx.fillStyle='#EAF3EC'; ctx.font='700 '+Math.max(11,W*0.030)+'px '+getComputedStyle(document.body).fontFamily;
-  ctx.textAlign='center'; ctx.fillText(Math.round(P), W/2, by-7);
+/* ===== MEDIDOR DE POTENCIA — SIEMPRE EN PANTALLA =====
+   Antes solo asomaba mientras arrastrabas el dedo, así que no se podía ni leer ni aprender.
+   Ahora vive fijo a la izquierda: en reposo muestra el rango del estilo y tu tiro anterior,
+   mientras apuntás se carga en vivo, y al patear queda congelado en el valor con el que pegaste. */
+const FF=()=>getComputedStyle(document.body).fontFamily;
+function powerMeter(){
+  const S1=STYLES[(shot&&shot.style)||styleKey];
+  const bw=Math.max(14,W*0.038), bx=Math.max(12,W*0.034);
+  const bh=Math.min(H*0.34,260), by=H*0.30;
+  const yOf=v=>by+bh*(1-clamp(v/MXP,0,1));
+  // valor actual: en vivo si estoy apuntando, congelado si ya pateé, vacío en reposo
+  let P=null, live=false;
+  if(st===S.AIM&&drag){ const A=analyze(); if(A&&!A.cancel){ P=pw2P(A.power,S1); live=true; } }
+  else if(shot) P=shot.P;
+
+  ctx.save(); rr(bx,by,bw,bh,bw/2); ctx.clip();
+  ctx.fillStyle='rgba(4,12,8,.68)'; ctx.fillRect(bx,by,bw,bh);
+  ctx.fillStyle='rgba(255,255,255,.07)';                            // rango útil del estilo
+  ctx.fillRect(bx,yOf(S1.pMax),bw,yOf(S1.pMin)-yOf(S1.pMax));
+  ctx.fillStyle='rgba(255,59,59,.32)';                              // zona de descontrol
+  ctx.fillRect(bx,by,bw,yOf(S1.safe)-by);
+  if(P!=null){
+    const over=P>S1.safe;
+    ctx.fillStyle = over?'#FF3B3B' : P>S1.safe*0.70?'#FFD166':'#B4F25E';
+    ctx.fillRect(bx,yOf(P),bw,by+bh-yOf(P));
+    if(over){ ctx.fillStyle='rgba(255,255,255,'+(0.10+0.10*Math.sin(clock*14))+')'; ctx.fillRect(bx,by,bw,bh); }
+  }
+  ctx.restore();
+  ctx.strokeStyle='rgba(150,196,168,.35)'; ctx.lineWidth=1; rr(bx,by,bw,bh,bw/2); ctx.stroke();
+  // marca de CONTROL: hasta acá la puntería es tuya, más arriba es del azar
+  ctx.strokeStyle='#EAF3EC'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(bx-4,yOf(S1.safe)); ctx.lineTo(bx+bw+4,yOf(S1.safe)); ctx.stroke();
+  ctx.fillStyle='#EAF3EC'; ctx.font='700 10px '+FF(); ctx.textAlign='left';
+  ctx.fillText('CONTROL '+S1.safe, bx+bw+7, yOf(S1.safe)+3.5);
+  if(S1.pMin>0){ ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(bx,yOf(S1.pMin)); ctx.lineTo(bx+bw,yOf(S1.pMin)); ctx.stroke();
+    ctx.fillStyle='rgba(234,243,236,.6)'; ctx.fillText('mín '+S1.pMin, bx+bw+7, yOf(S1.pMin)+3.5); }
+  // fantasma del tiro anterior, para comparar
+  if(lastP!=null && st!==S.AIM && !shot){
+    ctx.strokeStyle=lastOver?'rgba(255,59,59,.75)':'rgba(180,242,94,.7)'; ctx.lineWidth=2; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(bx-3,yOf(lastP)); ctx.lineTo(bx+bw+3,yOf(lastP)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(234,243,236,.55)'; ctx.font='700 10px '+FF();
+    ctx.fillText('anterior', bx+bw+7, yOf(lastP)+3.5);
+  }
+  // número grande arriba
+  ctx.textAlign='center';
+  ctx.fillStyle = P==null?'rgba(234,243,236,.35)':(P>S1.safe?'#FF3B3B':'#EAF3EC');
+  ctx.font='700 '+Math.max(17,W*0.048)+'px '+FF();
+  ctx.fillText(P==null?'—':Math.round(P), bx+bw/2, by-10);
+  ctx.fillStyle='rgba(138,163,150,.9)'; ctx.font='700 9px '+FF();
+  ctx.fillText('POTENCIA', bx+bw/2, by+bh+15);
+  // al mantener el dedo quieto la potencia baja: se avisa en pantalla
+  if(live && drag.settle){
+    ctx.fillStyle='#54C7FF'; ctx.font='700 10px '+FF();
+    ctx.fillText('▼ bajando', bx+bw/2, by+bh+28);
+  }
 }
 function bar(v,timing){
-  const bw=W*0.6,bx=(W-bw)/2,by=H-46,bh=11;
+  const bw=W*0.6,bx=(W-bw)/2,by=spotPt().y+62,bh=11;
   ctx.fillStyle='rgba(0,0,0,.5)'; rr(bx,by,bw,bh,6); ctx.fill();
   ctx.fillStyle='rgba(180,242,94,.9)'; rr(bx+bw*.4,by,bw*.2,bh,6); ctx.fill();
   ctx.fillStyle='#fff'; rr(bx+bw*v-3,by-3,6,bh+6,3); ctx.fill();
 }
-function lab(t,c){ ctx.fillStyle=c; ctx.font='700 '+Math.max(13,W*0.036)+'px '+getComputedStyle(document.body).fontFamily;
-  ctx.textAlign='center'; ctx.fillText(t,W/2,H-58); }
+// el cartel va debajo del balón, no abajo del todo: ahí chocaba con los botones de carrera
+function lab(t,c){ ctx.fillStyle=c; ctx.font='700 '+Math.max(13,W*0.036)+'px '+FF();
+  ctx.textAlign='center'; ctx.shadowColor='#000'; ctx.shadowBlur=8;
+  ctx.fillText(t,W/2,spotPt().y+48); ctx.shadowBlur=0; }
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 function drawParts(){ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=p.g;p.life-=.02;
   if(p.life<=0){parts.splice(i,1);continue;} ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.col;ctx.fillRect(p.x,p.y,p.s,p.s);ctx.globalAlpha=1;} }
@@ -476,6 +549,16 @@ function drawParts(){ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p
 // ===== loop =====
 function frame(now){
   const dt=last?Math.min(.05,(now-last)/1000):0; last=now; clock+=dt;
+  // ASENTAR EL TIRO: con el dedo apoyado y quieto, la potencia baja sola hasta el piso
+  // por distancia. Si te pasaste de fuerza no hay que soltar y volver a empezar.
+  if(st===S.AIM&&drag){
+    const idle=now-(drag.tMove||now);
+    drag.settle = idle>200;
+    if(drag.settle){
+      const lenN=clamp(Math.hypot(drag.cx-drag.sx,drag.cy-drag.sy)/(H*0.30),0,1);
+      drag.peak=Math.max(drag.peak-dt*0.85, lenN*0.72);
+    }
+  }
   if(st===S.WIND){ anim+=dt; if(anim>=windDur()){ st=S.FLY; shot.t0=clock; shake=shot.pan?3:7; (shot.pan?sfx.chip:sfx.kick)(); } }
   else if(st===S.FLY&&shot){ anim+=dt;
     shot.t=clamp((clock-(shot.t0||clock))/(shot.dur||1.2),0,1);   // por reloj: seguro en iPhone y Android
@@ -485,6 +568,7 @@ function frame(now){
   ctx.clearRect(0,0,W,H); ctx.save();
   if(shake>0){ ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=.85; if(shake<.4)shake=0; }
   drawBG(); drawKeeper(); drawBall(); drawKicker(); drawAim(); drawParts();
+  if(started) powerMeter();
   if(flash>0){ ctx.fillStyle='rgba(180,242,94,'+(flash*.14)+')'; ctx.fillRect(-20,-20,W+40,H+40); flash-=.05; }
   ctx.restore(); requestAnimationFrame(frame);
 }
